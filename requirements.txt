@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+psycopg2-binary # Untuk PostgreSQL
+pymongo # Untuk MongoDB
+redis # Untuk Redis
+cassandra-driver # Untuk Cassandra
+neo4j # Untuk Neo4j
+sqlalchemy # ORM untuk PostgreSQL (opsional, tapi bagus untuk koneksi)

@@ -1,0 +1,156 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Master (Publisher)
+  pg_master:
+  
+    image: postgres:15
+    container_name: pg_master
+    environment:
+      POSTGRES_DB: hospital_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - ./postgres/master/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./postgres/master/init.sql:/docker-entrypoint-initdb.d/init.sql
+     
+      - pg_master_data:/var/lib/postgresql/data
+    ports:
+      - "5436:5432"
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d hospital_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL Slave (Subscriber)
+  pg_slave:
+    image: postgres:15
+    container_name: pg_slave
+    environment:
+      POSTGRES_DB: hospital_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      PGDATA: /var/lib/postgresql/data/pg_slave_data
+    volumes:
+      - ./postgres/slave/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./postgres/slave/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5435:5432"
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    depends_on:
+      pg_master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d hospital_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'db.runCommand(\"ping\").ok' | mongosh --quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Neo4j
+  neo4j:
+    image: neo4j:latest
+    container_name: neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - ./neo4j/conf:/conf
+      - ./neo4j/import:/var/lib/neo4j/import
+    environment:
+      NEO4J_AUTH: neo4j/password
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Cassandra
+  cassandra:
+    image: cassandra:latest
+    container_name: cassandra
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    environment:
+      CASSANDRA_CLUSTER_NAME: 'HospitalCluster'
+      CASSANDRA_DC: 'datacenter1'
+      CASSANDRA_RACK: 'rack1'
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Aplikasi Python (FastAPI)
+  app:
+    build: .
+    container_name: hospital_app
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      pg_master:
+        condition: service_healthy
+      pg_slave:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
+    environment:
+      PG_MASTER_HOST: pg_master
+      PG_SLAVE_HOST: pg_slave
+      PG_USER: user
+      PG_PASSWORD: password
+      PG_DB: hospital_db
+      MONGO_HOST: mongodb
+      REDIS_HOST: redis
+      NEO4J_HOST: neo4j
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: password
+      CASSANDRA_HOSTS: cassandra
+      CASSANDRA_KEYSPACE: hospital_keyspace
+
+volumes:
+  pg_master_data:
+  pg_slave_data:
+  mongodb_data:
+  redis_data:
+  neo4j_data:
+  cassandra_data:
